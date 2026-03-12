@@ -219,33 +219,26 @@ class FlickrDataset(Dataset):
         test_images = set(unique_images[n_train + n_val :])
 
         # Create datasets and assign filtered samples (no redundant I/O)
-        train_dataset = FlickrDataset.__new__(FlickrDataset)
-        train_dataset.root_dir = full_dataset.root_dir
-        train_dataset.image_dir = full_dataset.image_dir
-        train_dataset.transform = (
-            train_transform if train_transform is not None else full_dataset.transform
-        )
-        train_dataset.tokenizer = full_dataset.tokenizer
-        train_dataset.samples = [
-            s for s in full_dataset.samples if s[0] in train_images
+        split_configs = [
+            (train_images, train_transform),
+            (val_images, val_transform),
+            (test_images, test_transform),
         ]
 
-        val_dataset = FlickrDataset.__new__(FlickrDataset)
-        val_dataset.root_dir = full_dataset.root_dir
-        val_dataset.image_dir = full_dataset.image_dir
-        val_dataset.transform = (
-            val_transform if val_transform is not None else full_dataset.transform
-        )
-        val_dataset.tokenizer = full_dataset.tokenizer
-        val_dataset.samples = [s for s in full_dataset.samples if s[0] in val_images]
+        datasets = []
+        for split_images, split_transform in split_configs:
+            dataset = FlickrDataset.__new__(FlickrDataset)
+            dataset.root_dir = full_dataset.root_dir
+            dataset.image_dir = full_dataset.image_dir
+            dataset.transform = (
+                split_transform
+                if split_transform is not None
+                else full_dataset.transform
+            )
+            dataset.tokenizer = full_dataset.tokenizer
+            dataset.samples = [s for s in full_dataset.samples if s[0] in split_images]
+            datasets.append(dataset)
 
-        test_dataset = FlickrDataset.__new__(FlickrDataset)
-        test_dataset.root_dir = full_dataset.root_dir
-        test_dataset.image_dir = full_dataset.image_dir
-        test_dataset.transform = (
-            test_transform if test_transform is not None else full_dataset.transform
-        )
-        test_dataset.tokenizer = full_dataset.tokenizer
-        test_dataset.samples = [s for s in full_dataset.samples if s[0] in test_images]
+        train_dataset, val_dataset, test_dataset = datasets
 
         return train_dataset, val_dataset, test_dataset
