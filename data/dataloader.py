@@ -101,18 +101,18 @@ def collate_fn_with_padding(
 
             # Find max length in batch
             max_len = max(len(c) for c in caption_tensors)
+            batch_size = len(caption_tensors)
 
-            # Pad all captions to max length
-            padded_captions = []
-            for c in caption_tensors:
-                if len(c) < max_len:
-                    padding = torch.full(
-                        (max_len - len(c),), pad_token_id, dtype=c.dtype
-                    )
-                    c = torch.cat([c, padding])
-                padded_captions.append(c)
+            # Pre-allocate padded tensor (more efficient than per-caption padding)
+            padded = torch.full(
+                (batch_size, max_len), pad_token_id, dtype=caption_tensors[0].dtype
+            )
 
-            captions = torch.stack(padded_captions, dim=0)
+            # Fill in-place (avoids creating intermediate tensors)
+            for i, c in enumerate(caption_tensors):
+                padded[i, : len(c)] = c
+
+            captions = padded
 
         return images, captions
 
@@ -183,6 +183,7 @@ def create_dataloader(
         num_workers=num_workers,
         collate_fn=collate,
         pin_memory=True,
+        persistent_workers=num_workers > 0,
     )
 
     return dataloader
@@ -264,6 +265,7 @@ def create_split_dataloaders(
             num_workers=num_workers,
             collate_fn=collate,
             pin_memory=True,
+            persistent_workers=num_workers > 0,
         )
         for dataset, shuffle in datasets_and_shuffle
     ]
