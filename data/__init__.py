@@ -8,6 +8,7 @@ from .dataloader import (
 )
 from .flickr_dataset import FlickrDataset
 from .image.image_dataset import ImageDataset
+from .text.vocabulary import CaptionTokenizer, Vocabulary
 
 __all__ = [
     "FlickrDataset",
@@ -16,4 +17,6 @@ __all__ = [
     "create_split_dataloaders",
     "collate_fn",
     "collate_fn_with_padding",
+    "Vocabulary",
+    "CaptionTokenizer",
 ]

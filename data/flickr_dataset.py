@@ -121,32 +121,10 @@ class FlickrDataset(Dataset):
         if self.transform is not None:
             image = self.transform(image)
 
-        # Text processing interface (not implemented)
-        # If tokenizer is provided, use it to encode caption
         if self.tokenizer is not None:
-            caption = self._encode_caption(caption)
+            caption = self.tokenizer.encode(caption)
 
         return image, caption
-
-    def _encode_caption(self, caption: str) -> Any:
-        """
-        Encode caption using tokenizer.
-
-        This is an interface method. Actual implementation depends on
-        text processing modules (tokenizer, vocab, etc.).
-
-        Args:
-            caption: Raw caption text
-
-        Returns:
-            Encoded caption (implementation depends on tokenizer)
-        """
-        # Interface only - implementation in text modules
-        if self.tokenizer is not None and hasattr(self.tokenizer, "encode"):
-            return self.tokenizer.encode(caption)
-        else:
-            # Fallback: return raw caption
-            return caption
 
     def get_image_filename(self, idx: int) -> str:
         """Get the image filename for a given index."""
