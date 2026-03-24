@@ -102,9 +102,7 @@ class Vocabulary:
             Populated Vocabulary instance.
         """
         counts: Counter = Counter(
-            token
-            for caption in captions
-            for token in tokenize(clean_caption(caption))
+            token for caption in captions for token in tokenize(clean_caption(caption))
         )
         vocab = cls()
         vocab.build(counts, min_freq=min_freq)
@@ -124,7 +122,9 @@ class Vocabulary:
         unk = self.word2idx[self.UNK_TOKEN]
         ids = [self.word2idx.get(t, unk) for t in tokens]
         if add_special:
-            ids = [self.word2idx[self.SOS_TOKEN]] + ids + [self.word2idx[self.EOS_TOKEN]]
+            ids = (
+                [self.word2idx[self.SOS_TOKEN]] + ids + [self.word2idx[self.EOS_TOKEN]]
+            )
         return ids
 
     def decode(self, indices: list[int], skip_special: bool = True) -> str:
