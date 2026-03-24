@@ -97,6 +97,7 @@ class ImageCaptioningModel(nn.Module):
         Returns:
             generated_ids: [B, <= max_len]
         """
+        training = self.training
         self.eval()
 
         if images.dim() == 3:
@@ -125,4 +126,5 @@ class ImageCaptioningModel(nn.Module):
             if torch.all(next_token.squeeze(1) == eos_token_id):
                 break
 
+        self.train(training)
         return generated
