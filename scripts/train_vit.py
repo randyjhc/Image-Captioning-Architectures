@@ -15,9 +15,9 @@ from data.text.vocabulary import (
     CaptionTokenizer,
     Vocabulary,
 )
-from models.decoder import CaptionDecoder
-from models.model import ImageCaptioningModel
-from models.vit_encoder import ViTEncoder
+from model_vit.decoder import CaptionDecoder
+from model_vit.model import ImageCaptioningModel
+from model_vit.vit_encoder import ViTEncoder
 
 
 def build_model(
