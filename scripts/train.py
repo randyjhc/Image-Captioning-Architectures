@@ -1,6 +1,4 @@
 import csv
-import os
-import sys
 from pathlib import Path
 
 import torch
@@ -20,12 +18,6 @@ from data.text.vocabulary import (
 from models.decoder import CaptionDecoder
 from models.model import ImageCaptioningModel
 from models.vit_encoder import ViTEncoder
-
-# Allow running from project root:
-# python scripts/train.py
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
 
 
 def build_model(
@@ -99,7 +91,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    data_root = os.path.join(PROJECT_ROOT, "data", "datasets", "flickr8k")
+    data_root = Path(__file__).parent.parent / "data" / "datasets" / "flickr8k"
     batch_size = 8
     num_workers = 0
     learning_rate = 1e-4
