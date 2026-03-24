@@ -12,13 +12,22 @@ import torch
 
 try:
     from nltk.tokenize import word_tokenize
-    import nltk
 
-    nltk.download("punkt", quiet=True)
-    nltk.download("punkt_tab", quiet=True)
     _NLTK_AVAILABLE = True
 except ImportError:
     _NLTK_AVAILABLE = False
+
+_NLTK_DATA_DOWNLOADED = False
+
+
+def _ensure_nltk_data() -> None:
+    global _NLTK_DATA_DOWNLOADED
+    if not _NLTK_DATA_DOWNLOADED:
+        import nltk
+
+        nltk.download("punkt", quiet=True)
+        nltk.download("punkt_tab", quiet=True)
+        _NLTK_DATA_DOWNLOADED = True
 
 
 def clean_caption(text: str) -> str:
@@ -32,6 +41,7 @@ def clean_caption(text: str) -> str:
 def tokenize(text: str) -> list[str]:
     """Tokenize cleaned caption text into a list of tokens."""
     if _NLTK_AVAILABLE:
+        _ensure_nltk_data()
         return word_tokenize(text)
     return text.split()
 
@@ -102,9 +112,7 @@ class Vocabulary:
             Populated Vocabulary instance.
         """
         counts: Counter = Counter(
-            token
-            for caption in captions
-            for token in tokenize(clean_caption(caption))
+            token for caption in captions for token in tokenize(clean_caption(caption))
         )
         vocab = cls()
         vocab.build(counts, min_freq=min_freq)
@@ -124,7 +132,9 @@ class Vocabulary:
         unk = self.word2idx[self.UNK_TOKEN]
         ids = [self.word2idx.get(t, unk) for t in tokens]
         if add_special:
-            ids = [self.word2idx[self.SOS_TOKEN]] + ids + [self.word2idx[self.EOS_TOKEN]]
+            ids = (
+                [self.word2idx[self.SOS_TOKEN]] + ids + [self.word2idx[self.EOS_TOKEN]]
+            )
         return ids
 
     def decode(self, indices: list[int], skip_special: bool = True) -> str:
