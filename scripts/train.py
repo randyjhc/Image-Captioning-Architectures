@@ -1,16 +1,25 @@
+import csv
 import os
 import sys
+from pathlib import Path
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch.utils.data import DataLoader
 
-from Image_Captioning_Architectures.data.flickr8k_dataset import (
-    build_flickr8k_dataloaders,
+from data.flickr_dataset import FlickrDataset
+from data.image.transforms import (
+    get_train_transforms,
+    get_val_transforms,
 )
-from Image_Captioning_Architectures.models.decoder import CaptionDecoder
-from Image_Captioning_Architectures.models.model import ImageCaptioningModel
-from Image_Captioning_Architectures.models.vit_encoder import ViTEncoder
+from data.text.vocabulary import (
+    CaptionTokenizer,
+    Vocabulary,
+)
+from models.decoder import CaptionDecoder
+from models.model import ImageCaptioningModel
+from models.vit_encoder import ViTEncoder
 
 # Allow running from project root:
 # python scripts/train.py
@@ -54,9 +63,9 @@ def train_one_epoch(model, dataloader, criterion, optimizer, device):
     model.train()
     total_loss = 0.0
 
-    for batch_idx, batch in enumerate(dataloader):
-        images = batch["images"].to(device)
-        captions = batch["captions"].to(device)
+    for batch_idx, (images, captions) in enumerate(dataloader):
+        images = images.to(device)
+        captions = captions.to(device)
 
         optimizer.zero_grad()
         loss, logits = model.compute_loss(images, captions, criterion)
@@ -76,9 +85,9 @@ def validate_one_epoch(model, dataloader, criterion, device):
     model.eval()
     total_loss = 0.0
 
-    for batch in dataloader:
-        images = batch["images"].to(device)
-        captions = batch["captions"].to(device)
+    for images, captions in dataloader:
+        images = images.to(device)
+        captions = captions.to(device)
 
         loss, logits = model.compute_loss(images, captions, criterion)
         total_loss += loss.item()
@@ -96,12 +105,29 @@ def main():
     learning_rate = 1e-4
     num_epochs = 2
 
-    train_loader, val_loader, test_loader, vocab = build_flickr8k_dataloaders(
-        data_root=data_root,
-        batch_size=batch_size,
-        image_size=224,
-        min_freq=1,
-        num_workers=num_workers,
+    captions_file = Path(data_root) / "captions.txt"
+    with open(captions_file, encoding="utf-8") as f:
+        all_captions = [row["caption"] for row in csv.DictReader(f)]
+
+    vocab = Vocabulary.build_from_captions(all_captions, min_freq=1)
+    tokenizer = CaptionTokenizer(vocab)
+
+    train_ds, val_ds, test_ds = FlickrDataset.create_splits(
+        root_dir=data_root,
+        train_transform=get_train_transforms(224),
+        val_transform=get_val_transforms(224),
+        test_transform=get_val_transforms(224),
+        tokenizer=tokenizer,
+    )
+
+    train_loader = DataLoader(
+        train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers
+    )
+    val_loader = DataLoader(
+        val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers
+    )
+    test_loader = DataLoader(
+        test_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers
     )
 
     print("vocab size:", len(vocab))
@@ -111,11 +137,11 @@ def main():
 
     model = build_model(
         vocab_size=len(vocab),
-        pad_token_id=vocab.pad_id,
+        pad_token_id=vocab.pad_idx,
         freeze_encoder=True,
     ).to(device)
 
-    criterion = nn.CrossEntropyLoss(ignore_index=vocab.pad_id)
+    criterion = nn.CrossEntropyLoss(ignore_index=vocab.pad_idx)
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
     for epoch in range(num_epochs):
@@ -128,18 +154,19 @@ def main():
             f"val_loss={val_loss:.4f}"
         )
 
-    batch = next(iter(val_loader))
-    sample_image = batch["images"][0].to(device)
-    sample_caption = batch["raw_captions"][0]
+    sample_image, _ = val_ds[0]
+    sample_caption = val_ds.get_caption(0)
 
     generated_ids = model.generate(
-        images=sample_image,
-        sos_token_id=vocab.sos_id,
-        eos_token_id=vocab.eos_id,
+        images=sample_image.to(device),
+        sos_token_id=vocab.sos_idx,
+        eos_token_id=vocab.eos_idx,
         max_len=20,
     )[0].tolist()
 
-    generated_tokens = [vocab.itos[idx] for idx in generated_ids if idx in vocab.itos]
+    generated_tokens = [
+        vocab.idx2word[idx] for idx in generated_ids if idx in vocab.idx2word
+    ]
     print("reference:", sample_caption)
     print("generated:", " ".join(generated_tokens))
 
