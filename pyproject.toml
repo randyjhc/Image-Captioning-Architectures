@@ -26,7 +26,7 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["data*", "model_vit*"]
+include = ["data*", "model_vit*", "train_vit*"]
 
 [tool.pytest.ini_options]
 markers = [
