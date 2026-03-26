@@ -15,9 +15,9 @@ from data import create_split_dataloaders
 from data.flickr_dataset import FlickrDataset
 from data.image.transforms import get_train_transforms, get_val_transforms
 from data.text.vocabulary import CaptionTokenizer, Vocabulary
-from model_vit.decoder import CaptionDecoder
+from model_vit.builder import build_model_from_config
 from model_vit.model import ImageCaptioningModel
-from model_vit.vit_encoder import ViTEncoder
+from utils import seed_everything
 
 from .config import ConfigViT
 
@@ -60,7 +60,7 @@ class TrainerViT:
 
         self._vocab, self._tokenizer = self._build_vocab_and_tokenizer()
         self._train_loader, self._val_loader, self._test_loader, self._val_ds = (
-            self._build_dataloaders()
+            self._build_dataloaders(seed_everything(config.seed))
         )
         self._model = self._build_model().to(self._device)
         self._criterion = nn.CrossEntropyLoss(ignore_index=self._vocab.pad_idx)
@@ -69,14 +69,10 @@ class TrainerViT:
             lr=config.lr,
             weight_decay=config.weight_decay,
         )
-        self._scheduler = (
-            torch.optim.lr_scheduler.CosineAnnealingLR(
-                self._optimizer,
-                T_max=config.num_epochs,
-                eta_min=config.eta_min,
-            )
-            if config.use_lr_scheduler
-            else None
+        self._scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            self._optimizer,
+            T_max=config.num_epochs,
+            eta_min=config.eta_min,
         )
 
     # ------------------------------------------------------------------
@@ -109,8 +105,7 @@ class TrainerViT:
                 f" val={val_loss:.4f}"
             )
 
-            if self._scheduler is not None:
-                self._scheduler.step()
+            self._scheduler.step()
 
             if self._checkpoint_dir is not None:
                 self.save_checkpoint(self._checkpoint_dir / "latest.pt")
@@ -172,11 +167,14 @@ class TrainerViT:
 
     def _build_dataloaders(
         self,
+        generator,
     ) -> tuple[DataLoader, DataLoader, DataLoader, FlickrDataset]:
         train_loader, val_loader, test_loader = create_split_dataloaders(
             root_dir=self.data_root,
             batch_size=self.config.batch_size,
             num_workers=self.config.num_workers,
+            seed=self.config.seed,
+            generator=generator,
             train_transform=get_train_transforms(self.config.image_size),
             val_transform=get_val_transforms(self.config.image_size),
             test_transform=get_val_transforms(self.config.image_size),
@@ -188,25 +186,9 @@ class TrainerViT:
         return train_loader, val_loader, test_loader, val_loader.dataset
 
     def _build_model(self) -> ImageCaptioningModel:
-        encoder = ViTEncoder(
-            model_name=self.config.vit_model_name,
-            pretrained=True,
-            decoder_dim=self.config.decoder_dim,
-            freeze=self.config.freeze_encoder,
-        )
-        decoder = CaptionDecoder(
+        return build_model_from_config(
+            self.config,
             vocab_size=len(self._vocab),
-            d_model=self.config.decoder_dim,
-            nhead=self.config.nhead,
-            num_layers=self.config.num_layers,
-            dim_feedforward=self.config.dim_feedforward,
-            dropout=self.config.dropout,
-            max_len=self.config.max_caption_len,
-            pad_token_id=self._vocab.pad_idx,
-        )
-        return ImageCaptioningModel(
-            encoder=encoder,
-            decoder=decoder,
             pad_token_id=self._vocab.pad_idx,
         )
 

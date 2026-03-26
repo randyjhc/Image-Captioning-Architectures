@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import logging
+from dataclasses import dataclass, fields
 
 
 @dataclass
@@ -18,6 +19,15 @@ class ConfigViT:
         >>> trainer = TrainerViT(config, data_root="data/datasets/flickr8k")
         >>> trainer.fit()
     """
+
+    # ---- Paths ----
+    data_root: str = "data/datasets/flickr8k"
+    checkpoint_dir: str = "checkpoints/vit"
+    image_paths: tuple[str, ...] = (
+        "data/datasets/flickr8k/Images/667626_18933d713e.jpg",
+        "data/datasets/flickr8k/Images/3637013_c675de7705.jpg",
+        "data/datasets/flickr8k/Images/10815824_2997e03d76.jpg",
+    )  # Images to caption in generation mode
 
     # ---- Data ----
     image_size: int = 224
@@ -44,8 +54,18 @@ class ConfigViT:
     # ---- Optimiser ----
     lr: float = 1e-4
     weight_decay: float = 0.01
-    use_lr_scheduler: bool = True
     eta_min: float = 0.0  # Minimum LR at end of cosine schedule
 
     # ---- Training ----
     num_epochs: int = 2
+    seed: int = 42
+
+    @classmethod
+    def from_dict(cls, d: dict) -> ConfigViT:
+        """Construct ConfigViT from a dict, ignoring unrecognised keys."""
+        logger = logging.getLogger("image_caption")
+        known = {f.name for f in fields(cls)}
+        unknown = d.keys() - known
+        if unknown:
+            logger.warning("Unrecognised config keys ignored: %s", sorted(unknown))
+        return cls(**{k: v for k, v in d.items() if k in known})

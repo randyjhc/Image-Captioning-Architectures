@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import csv
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import torch
 
-from data.text.vocabulary import CaptionTokenizer
+from data.text.vocabulary import CaptionTokenizer, Vocabulary
+from model_vit.builder import build_model_from_config
 
 from .model import ImageCaptioningModel
+
+if TYPE_CHECKING:
+    from train_vit.config import ConfigViT
 
 
 class GeneratorViT:
@@ -23,6 +29,8 @@ class GeneratorViT:
                          loads model weights from ``checkpoint["model_state_dict"]``
                          before generating (mirrors TrainerViT.load_checkpoint,
                          but omits optimizer state).
+        config: Optional ConfigViT used to build the model. Set automatically
+                by ``from_checkpoint``.
     """
 
     def __init__(
@@ -30,12 +38,56 @@ class GeneratorViT:
         model: ImageCaptioningModel,
         tokenizer: CaptionTokenizer,
         checkpoint_path: str | Path | None = None,
+        config: ConfigViT | None = None,
     ) -> None:
         self.model = model
         self.tokenizer = tokenizer
+        self.config = config
         if checkpoint_path is not None:
             checkpoint = torch.load(checkpoint_path, map_location="cpu")
             self.model.load_state_dict(checkpoint["model_state_dict"])
+
+    @classmethod
+    def from_checkpoint(
+        cls,
+        checkpoint_path: str | Path,
+        data_root: str | Path,
+    ) -> GeneratorViT:
+        """Build a GeneratorViT from a checkpoint and data root, without a Trainer.
+
+        Loads the saved ConfigViT from the checkpoint to reconstruct the model
+        architecture, rebuilds the vocabulary from captions.txt, and loads the
+        model weights. No dataloader or optimizer is constructed.
+
+        Args:
+            checkpoint_path: Path to a checkpoint saved by TrainerViT.
+            data_root: Path to the Flickr8k dataset root (contains captions.txt).
+
+        Returns:
+            GeneratorViT instance with weights loaded and a ``config`` attribute
+            set to the ConfigViT used during training.
+        """
+        ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+        config: ConfigViT = ckpt["config"]
+
+        data_root = Path(data_root)
+        with open(data_root / "captions.txt", encoding="utf-8") as f:
+            all_captions = [row["caption"] for row in csv.DictReader(f)]
+        vocab = Vocabulary.build_from_captions(
+            all_captions, min_freq=config.min_vocab_freq
+        )
+        tokenizer = CaptionTokenizer(vocab, max_seq_len=config.max_seq_len)
+
+        model = build_model_from_config(
+            config,
+            vocab_size=len(vocab),
+            pad_token_id=vocab.pad_idx,
+            pretrained=False,
+            freeze=False,
+        )
+        model.load_state_dict(ckpt["model_state_dict"])
+
+        return cls(model, tokenizer, config=config)
 
     @torch.inference_mode()
     def generate_ids(
