@@ -208,3 +208,5 @@ __marimo__/
 
 # Dataset files (too large for version control)
 data/datasets/
+*.pt
+*.json

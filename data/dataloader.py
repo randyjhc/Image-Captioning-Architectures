@@ -197,6 +197,7 @@ def create_split_dataloaders(
     val_ratio: float = 0.1,
     test_ratio: float = 0.1,
     seed: int = 42,
+    generator: Optional[torch.Generator] = None,
     transform: Optional[Callable] = None,
     tokenizer: Optional[Any] = None,
     collate_fn_type: str = "default",
@@ -266,6 +267,7 @@ def create_split_dataloaders(
             collate_fn=collate,
             pin_memory=True,
             persistent_workers=num_workers > 0,
+            generator=generator,
         )
         for dataset, shuffle in datasets_and_shuffle
     ]
