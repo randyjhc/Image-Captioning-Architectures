@@ -1,7 +1,6 @@
 """Entry point for ViT image captioning training.
 
 Run with:
-    python train_vit/train.py
     python -m train_vit.train
 """
 
@@ -10,12 +9,17 @@ from __future__ import annotations
 from pathlib import Path
 
 from model_vit import GeneratorViT
+
 from train_vit.config import ConfigViT
 from train_vit.trainer import TrainerViT
 
 
 def main() -> None:
-    config = ConfigViT()
+    config = ConfigViT(
+        num_epochs=2,
+        batch_size=64,
+        max_samples=500,
+    )
     data_root = Path(__file__).parent.parent / "data" / "datasets" / "flickr8k"
 
     trainer = TrainerViT(

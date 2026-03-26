@@ -23,9 +23,10 @@ class ConfigViT:
     image_size: int = 224
     min_vocab_freq: int = 1
     max_seq_len: int = 34  # CaptionTokenizer fixed output length (covers most Flickr8k)
+    max_samples: int | None = None  # None = full dataset; set e.g. 500 for fast runs
 
     # ---- DataLoader ----
-    batch_size: int = 8
+    batch_size: int = 32
     num_workers: int = 0
 
     # ---- Encoder (ViT) ----
@@ -43,6 +44,8 @@ class ConfigViT:
     # ---- Optimiser ----
     lr: float = 1e-4
     weight_decay: float = 0.01
+    use_lr_scheduler: bool = True
+    eta_min: float = 0.0  # Minimum LR at end of cosine schedule
 
     # ---- Training ----
     num_epochs: int = 2

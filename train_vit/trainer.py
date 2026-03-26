@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import csv
 from pathlib import Path
+from tqdm import tqdm
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 
+from data import create_split_dataloaders
 from data.flickr_dataset import FlickrDataset
 from data.image.transforms import get_train_transforms, get_val_transforms
 from data.text.vocabulary import CaptionTokenizer, Vocabulary
@@ -67,6 +69,15 @@ class TrainerViT:
             lr=config.lr,
             weight_decay=config.weight_decay,
         )
+        self._scheduler = (
+            torch.optim.lr_scheduler.CosineAnnealingLR(
+                self._optimizer,
+                T_max=config.num_epochs,
+                eta_min=config.eta_min,
+            )
+            if config.use_lr_scheduler
+            else None
+        )
 
     # ------------------------------------------------------------------
     # Public API
@@ -90,11 +101,16 @@ class TrainerViT:
             train_loss = self._train_one_epoch()
             val_loss = self._validate_one_epoch()
 
+            lr = self._optimizer.param_groups[0]["lr"]
             print(
-                f"epoch={epoch + 1}/{epochs} "
-                f"train_loss={train_loss:.4f} "
-                f"val_loss={val_loss:.4f}"
+                f"Epoch={epoch + 1}/{epochs} |"
+                f" lr={lr:.6f} |"
+                f" train={train_loss:.4f} |"
+                f" val={val_loss:.4f}"
             )
+
+            if self._scheduler is not None:
+                self._scheduler.step()
 
             if self._checkpoint_dir is not None:
                 self.save_checkpoint(self._checkpoint_dir / "latest.pt")
@@ -157,42 +173,19 @@ class TrainerViT:
     def _build_dataloaders(
         self,
     ) -> tuple[DataLoader, DataLoader, DataLoader, FlickrDataset]:
-        train_ds, val_ds, test_ds = FlickrDataset.create_splits(
+        train_loader, val_loader, test_loader = create_split_dataloaders(
             root_dir=self.data_root,
+            batch_size=self.config.batch_size,
+            num_workers=self.config.num_workers,
             train_transform=get_train_transforms(self.config.image_size),
             val_transform=get_val_transforms(self.config.image_size),
             test_transform=get_val_transforms(self.config.image_size),
             tokenizer=self._tokenizer,
+            collate_fn_type="padding",
+            pad_token_id=self._vocab.pad_idx,
+            max_samples=self.config.max_samples,
         )
-
-        pin_memory = self._device.type == "cuda"
-        persistent = self.config.num_workers > 0
-
-        train_loader = DataLoader(
-            train_ds,
-            batch_size=self.config.batch_size,
-            shuffle=True,
-            num_workers=self.config.num_workers,
-            pin_memory=pin_memory,
-            persistent_workers=persistent,
-        )
-        val_loader = DataLoader(
-            val_ds,
-            batch_size=self.config.batch_size,
-            shuffle=False,
-            num_workers=self.config.num_workers,
-            pin_memory=pin_memory,
-            persistent_workers=persistent,
-        )
-        test_loader = DataLoader(
-            test_ds,
-            batch_size=self.config.batch_size,
-            shuffle=False,
-            num_workers=self.config.num_workers,
-            pin_memory=pin_memory,
-            persistent_workers=persistent,
-        )
-        return train_loader, val_loader, test_loader, val_ds
+        return train_loader, val_loader, test_loader, val_loader.dataset
 
     def _build_model(self) -> ImageCaptioningModel:
         encoder = ViTEncoder(
@@ -219,9 +212,9 @@ class TrainerViT:
 
     def _train_one_epoch(self) -> float:
         self._model.train()
-        total_loss = 0.0
+        total_loss = torch.zeros(1, device=self._device)
 
-        for batch_idx, (images, captions) in enumerate(self._train_loader):
+        for images, captions in tqdm(self._train_loader, desc="Train", unit="batch"):
             images = images.to(self._device)
             captions = captions.to(self._device)
 
@@ -230,23 +223,20 @@ class TrainerViT:
             loss.backward()
             self._optimizer.step()
 
-            total_loss += loss.item()
+            total_loss += loss.detach()
 
-            if batch_idx % 50 == 0:
-                print(f"  batch={batch_idx} loss={loss.item():.4f}")
-
-        return total_loss / len(self._train_loader)
+        return (total_loss / len(self._train_loader)).item()
 
     @torch.no_grad()
     def _validate_one_epoch(self) -> float:
         self._model.eval()
-        total_loss = 0.0
+        total_loss = torch.zeros(1, device=self._device)
 
-        for images, captions in self._val_loader:
+        for images, captions in tqdm(self._val_loader, desc="Eval", unit="batch"):
             images = images.to(self._device)
             captions = captions.to(self._device)
 
             loss, _logits = self._model.compute_loss(images, captions, self._criterion)
-            total_loss += loss.item()
+            total_loss += loss.detach()
 
-        return total_loss / len(self._val_loader)
+        return (total_loss / len(self._val_loader)).item()
