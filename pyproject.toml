@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "kaggle>=2.0.0",
+    "numpy>=2.4.3",
     "pillow>=12.1.1",
     "timm>=1.0.26",
     "torch>=2.10.0",
@@ -26,7 +27,7 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["data*", "model_vit*"]
+include = ["data*", "model_vit*", "train_vit*"]
 
 [tool.pytest.ini_options]
 markers = [
