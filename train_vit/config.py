@@ -55,10 +55,13 @@ class ConfigViT:
     lr: float = 1e-4
     weight_decay: float = 0.01
     eta_min: float = 0.0  # Minimum LR at end of cosine schedule
+    warmup_ratio: float = 0.05
 
     # ---- Training ----
     num_epochs: int = 2
     seed: int = 42
+    grad_clip: float = 1.0  # Max norm for gradient clipping; 0 disables
+    patience: int = 10
 
     @classmethod
     def from_dict(cls, d: dict) -> ConfigViT:

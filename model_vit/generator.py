@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -43,9 +44,15 @@ class GeneratorViT:
         self.model = model
         self.tokenizer = tokenizer
         self.config = config
+        self.logger = logging.getLogger("image_caption")
         if checkpoint_path is not None:
-            checkpoint = torch.load(checkpoint_path, map_location="cpu")
+            checkpoint = torch.load(
+                checkpoint_path, map_location="cpu", weights_only=False
+            )
             self.model.load_state_dict(checkpoint["model_state_dict"])
+            self.logger.info(f"Checkpoint loaded from {checkpoint_path}")
+        else:
+            self.logger.info("No checkpoint loaded, use initial weights")
 
     @classmethod
     def from_checkpoint(
@@ -85,9 +92,7 @@ class GeneratorViT:
             pretrained=False,
             freeze=False,
         )
-        model.load_state_dict(ckpt["model_state_dict"])
-
-        return cls(model, tokenizer, config=config)
+        return cls(model, tokenizer, checkpoint_path=checkpoint_path, config=config)
 
     @torch.inference_mode()
     def generate_ids(
