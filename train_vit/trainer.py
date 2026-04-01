@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import csv
 import sys
 import logging
 from pathlib import Path
@@ -11,13 +10,12 @@ from tqdm import tqdm
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import SequentialLR, LinearLR, CosineAnnealingLR
 
-from data import create_split_dataloaders
+from data import create_split_dataloaders_with_vocab
 from data.flickr_dataset import FlickrDataset
 from data.image.transforms import get_train_transforms, get_val_transforms
-from data.text.vocabulary import CaptionTokenizer, Vocabulary
+from data.text.vocabulary import CaptionTokenizer
 from model_vit.builder import build_model_from_config
 from model_vit.model import ImageCaptioningModel
 from utils import seed_everything
@@ -61,10 +59,27 @@ class TrainerViT:
 
         self._checkpoint_dir = Path(checkpoint_dir) if checkpoint_dir else None
 
-        self._vocab, self._tokenizer = self._build_vocab_and_tokenizer()
-        self._train_loader, self._val_loader, self._test_loader, self._val_ds = (
-            self._build_dataloaders(seed_everything(config.seed))
+        generator = seed_everything(config.seed)
+        (
+            self._train_loader,
+            self._val_loader,
+            self._test_loader,
+            self._vocab,
+            self._tokenizer,
+        ) = create_split_dataloaders_with_vocab(
+            root_dir=self.data_root,
+            min_vocab_freq=config.min_vocab_freq,
+            max_seq_len=config.max_seq_len,
+            batch_size=config.batch_size,
+            num_workers=config.num_workers,
+            seed=config.seed,
+            generator=generator,
+            train_transform=get_train_transforms(config.image_size),
+            val_transform=get_val_transforms(config.image_size),
+            test_transform=get_val_transforms(config.image_size),
+            max_samples=config.max_samples,
         )
+        self._val_ds = self._val_loader.dataset
         self._model = self._build_model().to(self._device)
         self._criterion = nn.CrossEntropyLoss(ignore_index=self._vocab.pad_idx)
         self._optimizer = optim.AdamW(
@@ -189,37 +204,6 @@ class TrainerViT:
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
-
-    def _build_vocab_and_tokenizer(self) -> tuple[Vocabulary, CaptionTokenizer]:
-        captions_file = self.data_root / "captions.txt"
-        with open(captions_file, encoding="utf-8") as f:
-            all_captions = [row["caption"] for row in csv.DictReader(f)]
-
-        vocab = Vocabulary.build_from_captions(
-            all_captions, min_freq=self.config.min_vocab_freq
-        )
-        tokenizer = CaptionTokenizer(vocab, max_seq_len=self.config.max_seq_len)
-        return vocab, tokenizer
-
-    def _build_dataloaders(
-        self,
-        generator,
-    ) -> tuple[DataLoader, DataLoader, DataLoader, FlickrDataset]:
-        train_loader, val_loader, test_loader = create_split_dataloaders(
-            root_dir=self.data_root,
-            batch_size=self.config.batch_size,
-            num_workers=self.config.num_workers,
-            seed=self.config.seed,
-            generator=generator,
-            train_transform=get_train_transforms(self.config.image_size),
-            val_transform=get_val_transforms(self.config.image_size),
-            test_transform=get_val_transforms(self.config.image_size),
-            tokenizer=self._tokenizer,
-            collate_fn_type="padding",
-            pad_token_id=self._vocab.pad_idx,
-            max_samples=self.config.max_samples,
-        )
-        return train_loader, val_loader, test_loader, val_loader.dataset
 
     def _build_model(self) -> ImageCaptioningModel:
         return build_model_from_config(

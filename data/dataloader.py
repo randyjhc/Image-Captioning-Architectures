@@ -7,6 +7,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from .flickr_dataset import FlickrDataset
+from .text.vocabulary import CaptionTokenizer, Vocabulary
 
 
 def _get_collate_fn(collate_fn_type: str, pad_token_id: int = 0) -> Callable:
@@ -273,3 +274,75 @@ def create_split_dataloaders(
     ]
 
     return tuple(loaders)
+
+
+def create_split_dataloaders_with_vocab(
+    root_dir: str | Path,
+    min_vocab_freq: int = 1,
+    max_seq_len: int = 34,
+    batch_size: int = 32,
+    num_workers: int = 4,
+    seed: int = 42,
+    generator: Optional[torch.Generator] = None,
+    train_transform: Optional[Callable] = None,
+    val_transform: Optional[Callable] = None,
+    test_transform: Optional[Callable] = None,
+    **dataset_kwargs: Any,
+) -> tuple[DataLoader, DataLoader, DataLoader, Vocabulary, CaptionTokenizer]:
+    """
+    Create train/val/test DataLoaders with a vocabulary built from training data only.
+
+    Avoids information leakage by splitting first, then building the vocabulary
+    exclusively from training captions before creating the DataLoaders.
+
+    Args:
+        root_dir: Root directory containing the Flickr8k dataset
+        min_vocab_freq: Minimum token frequency to include in vocabulary
+        max_seq_len: Fixed caption length for the tokenizer (includes SOS + EOS)
+        batch_size: Number of samples per batch
+        num_workers: Number of worker processes for data loading
+        seed: Random seed for reproducibility
+        generator: Optional torch.Generator for DataLoader shuffling
+        train_transform: Image transform for the training split
+        val_transform: Image transform for the validation split
+        test_transform: Image transform for the test split
+        **dataset_kwargs: Additional arguments passed to FlickrDataset (e.g. max_samples)
+
+    Returns:
+        Tuple of (train_loader, val_loader, test_loader, vocab, tokenizer)
+    """
+    # Step 1: create splits WITHOUT tokenizer
+    train_ds, val_ds, test_ds = FlickrDataset.create_splits(
+        root_dir=root_dir,
+        seed=seed,
+        train_transform=train_transform,
+        val_transform=val_transform,
+        test_transform=test_transform,
+        **dataset_kwargs,
+    )
+
+    # Step 2: build vocab from training captions only
+    train_captions = [caption for _, caption in train_ds.samples]
+    vocab = Vocabulary.build_from_captions(train_captions, min_freq=min_vocab_freq)
+    tokenizer = CaptionTokenizer(vocab, max_seq_len=max_seq_len)
+
+    # Step 3: assign tokenizer to all splits
+    for ds in (train_ds, val_ds, test_ds):
+        ds.tokenizer = tokenizer
+
+    # Step 4: create dataloaders
+    collate = collate_fn_with_padding(pad_token_id=vocab.pad_idx)
+    loader_kwargs: dict[str, Any] = dict(
+        batch_size=batch_size,
+        num_workers=num_workers,
+        collate_fn=collate,
+        pin_memory=True,
+        persistent_workers=num_workers > 0,
+    )
+    train_loader = DataLoader(
+        train_ds, shuffle=True, generator=generator, **loader_kwargs
+    )
+    val_loader = DataLoader(val_ds, shuffle=False, **loader_kwargs)
+    test_loader = DataLoader(test_ds, shuffle=False, **loader_kwargs)
+
+    return train_loader, val_loader, test_loader, vocab, tokenizer
