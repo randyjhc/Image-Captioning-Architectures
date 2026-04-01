@@ -174,6 +174,7 @@ class TrainerViT:
                 "optimizer_state_dict": self._optimizer.state_dict(),
                 "best_val_loss": kwargs.get("best_val_loss", float("-inf")),
                 "config": self.config,
+                "vocab_word2idx": self._vocab.word2idx,
             },
             path,
         )
