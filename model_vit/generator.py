@@ -77,12 +77,17 @@ class GeneratorViT:
         ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
         config: ConfigViT = ckpt["config"]
 
-        data_root = Path(data_root)
-        with open(data_root / "captions.txt", encoding="utf-8") as f:
-            all_captions = [row["caption"] for row in csv.DictReader(f)]
-        vocab = Vocabulary.build_from_captions(
-            all_captions, min_freq=config.min_vocab_freq
-        )
+        if "vocab_word2idx" in ckpt:
+            vocab = Vocabulary()
+            vocab.word2idx = ckpt["vocab_word2idx"]
+            vocab.idx2word = {v: k for k, v in vocab.word2idx.items()}
+        else:
+            data_root = Path(data_root)
+            with open(data_root / "captions.txt", encoding="utf-8") as f:
+                all_captions = [row["caption"] for row in csv.DictReader(f)]
+            vocab = Vocabulary.build_from_captions(
+                all_captions, min_freq=config.min_vocab_freq
+            )
         tokenizer = CaptionTokenizer(vocab, max_seq_len=config.max_seq_len)
 
         model = build_model_from_config(
