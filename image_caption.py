@@ -45,6 +45,7 @@ def run_train_vit(cfg_dict: dict[str, Any]) -> None:
     from train_vit.trainer import TrainerViT
 
     config = ConfigViT.from_dict(cfg_dict)
+    logger_setup(log_file=config.log_file)
     trainer = TrainerViT(config, config.data_root, checkpoint_dir=config.checkpoint_dir)
     trainer.fit()
 

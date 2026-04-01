@@ -23,6 +23,7 @@ class ConfigViT:
     # ---- Paths ----
     data_root: str = "data/datasets/flickr8k"
     checkpoint_dir: str = "checkpoints/vit"
+    log_file: str | None = None  # e.g. "logs/train.log"; None = terminal only
     image_paths: tuple[str, ...] = (
         "data/datasets/flickr8k/Images/667626_18933d713e.jpg",
         "data/datasets/flickr8k/Images/3637013_c675de7705.jpg",
