@@ -5,6 +5,7 @@ from .dataloader import (
     collate_fn_with_padding,
     create_dataloader,
     create_split_dataloaders,
+    create_split_dataloaders_with_vocab,
 )
 from .flickr_dataset import FlickrDataset
 from .image.image_dataset import ImageDataset
@@ -15,6 +16,7 @@ __all__ = [
     "ImageDataset",
     "create_dataloader",
     "create_split_dataloaders",
+    "create_split_dataloaders_with_vocab",
     "collate_fn",
     "collate_fn_with_padding",
     "Vocabulary",
