@@ -9,7 +9,7 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.optim.lr_scheduler import CosineAnnealingLR
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from tqdm import tqdm
 
 from data import create_split_dataloaders_with_vocab
@@ -58,10 +58,12 @@ class TrainerCNN:
             lr=config.lr,
             weight_decay=config.weight_decay,
         )
-        self._scheduler = CosineAnnealingLR(
+        self._scheduler = ReduceLROnPlateau(
             self._optimizer,
-            T_max=config.num_epochs,
-            eta_min=config.eta_min,
+            mode="min",
+            factor=config.lr_reduce_factor,
+            patience=config.lr_scheduler_patience,
+            min_lr=config.eta_min,
         )
         self._logger.info("=" * 20)
         self._logger.info("Training Setup")
@@ -114,7 +116,7 @@ class TrainerCNN:
                     )
                     break
 
-            self._scheduler.step()
+            self._scheduler.step(val_loss)
 
     def evaluate(self) -> float:
         """Run one validation pass. Returns average validation loss."""

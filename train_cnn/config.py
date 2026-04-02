@@ -41,12 +41,14 @@ class ConfigCNN:
     lr: float = 1e-4
     weight_decay: float = 0.01
     eta_min: float = 0.0
+    lr_reduce_factor: float = 0.5
+    lr_scheduler_patience: int = 2
 
     # ---- Training ----
     num_epochs: int = 10
     seed: int = 42
     grad_clip: float = 1.0
-    patience: int = 10
+    patience: int = 4
 
     @classmethod
     def from_dict(cls, d: dict) -> "ConfigCNN":
