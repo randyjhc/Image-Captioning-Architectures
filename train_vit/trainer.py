@@ -2,19 +2,20 @@
 
 from __future__ import annotations
 
-import csv
+import sys
+import logging
 from pathlib import Path
 from tqdm import tqdm
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader
+from torch.optim.lr_scheduler import SequentialLR, LinearLR, CosineAnnealingLR
 
-from data import create_split_dataloaders
+from data import create_split_dataloaders_with_vocab
 from data.flickr_dataset import FlickrDataset
 from data.image.transforms import get_train_transforms, get_val_transforms
-from data.text.vocabulary import CaptionTokenizer, Vocabulary
+from data.text.vocabulary import CaptionTokenizer
 from model_vit.builder import build_model_from_config
 from model_vit.model import ImageCaptioningModel
 from utils import seed_everything
@@ -58,10 +59,27 @@ class TrainerViT:
 
         self._checkpoint_dir = Path(checkpoint_dir) if checkpoint_dir else None
 
-        self._vocab, self._tokenizer = self._build_vocab_and_tokenizer()
-        self._train_loader, self._val_loader, self._test_loader, self._val_ds = (
-            self._build_dataloaders(seed_everything(config.seed))
+        generator = seed_everything(config.seed)
+        (
+            self._train_loader,
+            self._val_loader,
+            self._test_loader,
+            self._vocab,
+            self._tokenizer,
+        ) = create_split_dataloaders_with_vocab(
+            root_dir=self.data_root,
+            min_vocab_freq=config.min_vocab_freq,
+            max_seq_len=config.max_seq_len,
+            batch_size=config.batch_size,
+            num_workers=config.num_workers,
+            seed=config.seed,
+            generator=generator,
+            train_transform=get_train_transforms(config.image_size),
+            val_transform=get_val_transforms(config.image_size),
+            test_transform=get_val_transforms(config.image_size),
+            max_samples=config.max_samples,
         )
+        self._val_ds = self._val_loader.dataset
         self._model = self._build_model().to(self._device)
         self._criterion = nn.CrossEntropyLoss(ignore_index=self._vocab.pad_idx)
         self._optimizer = optim.AdamW(
@@ -69,11 +87,28 @@ class TrainerViT:
             lr=config.lr,
             weight_decay=config.weight_decay,
         )
-        self._scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        # self._scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        #     self._optimizer,
+        #     T_max=config.num_epochs,
+        #     eta_min=config.eta_min,
+        # )
+        total_steps = config.num_epochs * len(self._train_loader)
+        warmup_steps = int(total_steps * config.warmup_ratio)
+        self._scheduler = SequentialLR(
             self._optimizer,
-            T_max=config.num_epochs,
-            eta_min=config.eta_min,
+            schedulers=[
+                LinearLR(self._optimizer, start_factor=1e-8, total_iters=warmup_steps),
+                CosineAnnealingLR(self._optimizer, T_max=total_steps - warmup_steps),
+            ],
+            milestones=[warmup_steps],
         )
+        # Trainer Summary
+        self._logger = logging.getLogger("image_caption")
+        self._logger.info("=" * 20)
+        self._logger.info("Training Setup")
+        self._logger.info("=" * 20)
+        self._logger.info(f"Device={self._device}")
+        self._logger.info(f"total_steps={total_steps} | warmup_steps={warmup_steps}")
 
     # ------------------------------------------------------------------
     # Public API
@@ -92,38 +127,54 @@ class TrainerViT:
             self._checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
         best_val_loss = float("inf")
-
+        wait = 0
         for epoch in range(epochs):
             train_loss = self._train_one_epoch()
             val_loss = self._validate_one_epoch()
 
             lr = self._optimizer.param_groups[0]["lr"]
-            print(
+            self._logger.info(
                 f"Epoch={epoch + 1}/{epochs} |"
                 f" lr={lr:.6f} |"
                 f" train={train_loss:.4f} |"
                 f" val={val_loss:.4f}"
             )
 
-            self._scheduler.step()
-
-            if self._checkpoint_dir is not None:
-                self.save_checkpoint(self._checkpoint_dir / "latest.pt")
-                if val_loss < best_val_loss:
-                    best_val_loss = val_loss
-                    self.save_checkpoint(self._checkpoint_dir / "best.pt")
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                wait = 0
+                if self._checkpoint_dir is None:
+                    self._logger.info(
+                        f"No checkpoint path specified, best_val_loss={best_val_loss:.4f}"
+                    )
+                else:
+                    self.save_checkpoint(
+                        self._checkpoint_dir / "best.pt", best_val_loss=best_val_loss
+                    )
+                    self._logger.info(
+                        f"Checkpoint saved to {self._checkpoint_dir}, best_val_loss={best_val_loss:.4f}"
+                    )
+            else:
+                wait += 1
+                if wait >= self.config.patience:
+                    self._logger.info(
+                        f"Early stopping at epoch {epoch+1}, best_val_loss={best_val_loss:.4f}"
+                    )
+                    break
 
     def evaluate(self) -> float:
         """Run one validation pass. Returns average val loss."""
         return self._validate_one_epoch()
 
-    def save_checkpoint(self, path: str | Path) -> None:
+    def save_checkpoint(self, path: str | Path, **kwargs) -> None:
         """Save model weights, optimiser state, and config to a file."""
         torch.save(
             {
                 "model_state_dict": self._model.state_dict(),
                 "optimizer_state_dict": self._optimizer.state_dict(),
+                "best_val_loss": kwargs.get("best_val_loss", float("-inf")),
                 "config": self.config,
+                "vocab_word2idx": self._vocab.word2idx,
             },
             path,
         )
@@ -133,6 +184,7 @@ class TrainerViT:
         checkpoint = torch.load(path, map_location=self._device)
         self._model.load_state_dict(checkpoint["model_state_dict"])
         self._optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        self._logger.info(f"Checkpoint loaded from {path}")
 
     # ------------------------------------------------------------------
     # Properties
@@ -154,37 +206,6 @@ class TrainerViT:
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _build_vocab_and_tokenizer(self) -> tuple[Vocabulary, CaptionTokenizer]:
-        captions_file = self.data_root / "captions.txt"
-        with open(captions_file, encoding="utf-8") as f:
-            all_captions = [row["caption"] for row in csv.DictReader(f)]
-
-        vocab = Vocabulary.build_from_captions(
-            all_captions, min_freq=self.config.min_vocab_freq
-        )
-        tokenizer = CaptionTokenizer(vocab, max_seq_len=self.config.max_seq_len)
-        return vocab, tokenizer
-
-    def _build_dataloaders(
-        self,
-        generator,
-    ) -> tuple[DataLoader, DataLoader, DataLoader, FlickrDataset]:
-        train_loader, val_loader, test_loader = create_split_dataloaders(
-            root_dir=self.data_root,
-            batch_size=self.config.batch_size,
-            num_workers=self.config.num_workers,
-            seed=self.config.seed,
-            generator=generator,
-            train_transform=get_train_transforms(self.config.image_size),
-            val_transform=get_val_transforms(self.config.image_size),
-            test_transform=get_val_transforms(self.config.image_size),
-            tokenizer=self._tokenizer,
-            collate_fn_type="padding",
-            pad_token_id=self._vocab.pad_idx,
-            max_samples=self.config.max_samples,
-        )
-        return train_loader, val_loader, test_loader, val_loader.dataset
-
     def _build_model(self) -> ImageCaptioningModel:
         return build_model_from_config(
             self.config,
@@ -196,14 +217,24 @@ class TrainerViT:
         self._model.train()
         total_loss = torch.zeros(1, device=self._device)
 
-        for images, captions in tqdm(self._train_loader, desc="Train", unit="batch"):
-            images = images.to(self._device)
-            captions = captions.to(self._device)
+        for images, captions in tqdm(
+            self._train_loader,
+            desc="Train",
+            unit="batch",
+            disable=not sys.stderr.isatty(),
+        ):
+            images = images.to(self._device, non_blocking=True)
+            captions = captions.to(self._device, non_blocking=True)
 
             self._optimizer.zero_grad()
             loss, _logits = self._model.compute_loss(images, captions, self._criterion)
             loss.backward()
+            if self.config.grad_clip > 0:
+                torch.nn.utils.clip_grad_norm_(
+                    self._model.parameters(), self.config.grad_clip
+                )
             self._optimizer.step()
+            self._scheduler.step()
 
             total_loss += loss.detach()
 
@@ -214,9 +245,11 @@ class TrainerViT:
         self._model.eval()
         total_loss = torch.zeros(1, device=self._device)
 
-        for images, captions in tqdm(self._val_loader, desc="Eval", unit="batch"):
-            images = images.to(self._device)
-            captions = captions.to(self._device)
+        for images, captions in tqdm(
+            self._val_loader, desc="Eval", unit="batch", disable=not sys.stderr.isatty()
+        ):
+            images = images.to(self._device, non_blocking=True)
+            captions = captions.to(self._device, non_blocking=True)
 
             loss, _logits = self._model.compute_loss(images, captions, self._criterion)
             total_loss += loss.detach()

@@ -23,6 +23,7 @@ class ConfigViT:
     # ---- Paths ----
     data_root: str = "data/datasets/flickr8k"
     checkpoint_dir: str = "checkpoints/vit"
+    log_file: str | None = None  # e.g. "logs/train.log"; None = terminal only
     image_paths: tuple[str, ...] = (
         "data/datasets/flickr8k/Images/667626_18933d713e.jpg",
         "data/datasets/flickr8k/Images/3637013_c675de7705.jpg",
@@ -55,10 +56,13 @@ class ConfigViT:
     lr: float = 1e-4
     weight_decay: float = 0.01
     eta_min: float = 0.0  # Minimum LR at end of cosine schedule
+    warmup_ratio: float = 0.05
 
     # ---- Training ----
     num_epochs: int = 2
     seed: int = 42
+    grad_clip: float = 1.0  # Max norm for gradient clipping; 0 disables
+    patience: int = 10
 
     @classmethod
     def from_dict(cls, d: dict) -> ConfigViT:

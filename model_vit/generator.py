@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -43,9 +44,15 @@ class GeneratorViT:
         self.model = model
         self.tokenizer = tokenizer
         self.config = config
+        self.logger = logging.getLogger("image_caption")
         if checkpoint_path is not None:
-            checkpoint = torch.load(checkpoint_path, map_location="cpu")
+            checkpoint = torch.load(
+                checkpoint_path, map_location="cpu", weights_only=False
+            )
             self.model.load_state_dict(checkpoint["model_state_dict"])
+            self.logger.info(f"Checkpoint loaded from {checkpoint_path}")
+        else:
+            self.logger.info("No checkpoint loaded, use initial weights")
 
     @classmethod
     def from_checkpoint(
@@ -70,12 +77,17 @@ class GeneratorViT:
         ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
         config: ConfigViT = ckpt["config"]
 
-        data_root = Path(data_root)
-        with open(data_root / "captions.txt", encoding="utf-8") as f:
-            all_captions = [row["caption"] for row in csv.DictReader(f)]
-        vocab = Vocabulary.build_from_captions(
-            all_captions, min_freq=config.min_vocab_freq
-        )
+        if "vocab_word2idx" in ckpt:
+            vocab = Vocabulary()
+            vocab.word2idx = ckpt["vocab_word2idx"]
+            vocab.idx2word = {v: k for k, v in vocab.word2idx.items()}
+        else:
+            data_root = Path(data_root)
+            with open(data_root / "captions.txt", encoding="utf-8") as f:
+                all_captions = [row["caption"] for row in csv.DictReader(f)]
+            vocab = Vocabulary.build_from_captions(
+                all_captions, min_freq=config.min_vocab_freq
+            )
         tokenizer = CaptionTokenizer(vocab, max_seq_len=config.max_seq_len)
 
         model = build_model_from_config(
@@ -85,9 +97,7 @@ class GeneratorViT:
             pretrained=False,
             freeze=False,
         )
-        model.load_state_dict(ckpt["model_state_dict"])
-
-        return cls(model, tokenizer, config=config)
+        return cls(model, tokenizer, checkpoint_path=checkpoint_path, config=config)
 
     @torch.inference_mode()
     def generate_ids(
