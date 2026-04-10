@@ -49,8 +49,11 @@ class GeneratorViT:
             checkpoint = torch.load(
                 checkpoint_path, map_location="cpu", weights_only=False
             )
+            best_val_loss = checkpoint.get("best_val_loss", "N/A")
             self.model.load_state_dict(checkpoint["model_state_dict"])
-            self.logger.info(f"Checkpoint loaded from {checkpoint_path}")
+            self.logger.info(
+                f"Checkpoint loaded from {checkpoint_path}, best_val_loss={best_val_loss:.4f}"
+            )
         else:
             self.logger.info("No checkpoint loaded, use initial weights")
 

@@ -25,9 +25,11 @@ class ConfigViT:
     checkpoint_dir: str = "checkpoints/vit"
     log_file: str | None = None  # e.g. "logs/train.log"; None = terminal only
     image_paths: tuple[str, ...] = (
-        "data/datasets/flickr8k/Images/667626_18933d713e.jpg",
-        "data/datasets/flickr8k/Images/3637013_c675de7705.jpg",
-        "data/datasets/flickr8k/Images/10815824_2997e03d76.jpg",
+        "data/datasets/flickr8k/Images/1003163366_44323f5815.jpg",
+        "data/datasets/flickr8k/Images/1007129816_e794419615.jpg",
+        "data/datasets/flickr8k/Images/1019077836_6fc9b15408.jpg",
+        "data/datasets/flickr8k/Images/1022454428_b6b660a67b.jpg",
+        "data/datasets/flickr8k/Images/103195344_5d2dc613a3.jpg",
     )  # Images to caption in generation mode
 
     # ---- Data ----
@@ -41,6 +43,10 @@ class ConfigViT:
     num_workers: int = 0
 
     # ---- Encoder (ViT) ----
+    # Supported variants (all 224px input, timm model names):
+    #   "vit_base_patch16_224"   —  86M params  (default)
+    #   "vit_large_patch16_224"  — 307M params
+    #   "vit_huge_patch14_224"   — 632M params
     vit_model_name: str = "vit_base_patch16_224"
     freeze_encoder: bool = True  # Set False for full finetuning
 

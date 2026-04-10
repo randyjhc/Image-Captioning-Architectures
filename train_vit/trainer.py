@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import sys
 import logging
 from pathlib import Path
@@ -102,12 +103,24 @@ class TrainerViT:
             ],
             milestones=[warmup_steps],
         )
+        vocab_size = len(self._vocab)
+        total_params = sum(p.numel() for p in self._model.parameters())
+        frozen_params = sum(
+            p.numel() for p in self._model.parameters() if not p.requires_grad
+        )
         # Trainer Summary
         self._logger = logging.getLogger("image_caption")
         self._logger.info("=" * 20)
         self._logger.info("Training Setup")
         self._logger.info("=" * 20)
-        self._logger.info(f"Device={self._device}")
+        self._logger.info(f"device={self._device}")
+        self._logger.info(
+            f"vocab_size={vocab_size} | log(vocab_size)={math.log(vocab_size):.4f}"
+        )
+        self._logger.info(
+            f"total_params={total_params:,} | frozen_params={frozen_params:,}"
+            f" ({100 * frozen_params / total_params:.1f}%)"
+        )
         self._logger.info(f"total_steps={total_steps} | warmup_steps={warmup_steps}")
 
     # ------------------------------------------------------------------
@@ -135,7 +148,7 @@ class TrainerViT:
             lr = self._optimizer.param_groups[0]["lr"]
             self._logger.info(
                 f"Epoch={epoch + 1}/{epochs} |"
-                f" lr={lr:.6f} |"
+                f" lr={lr:.2e} |"
                 f" train={train_loss:.4f} |"
                 f" val={val_loss:.4f}"
             )
