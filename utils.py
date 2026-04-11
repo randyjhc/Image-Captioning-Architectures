@@ -48,6 +48,9 @@ def seed_everything(seed: int = 42) -> torch.Generator:
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
+    # torch.use_deterministic_algorithms(True, warn_only=True)
+    torch.backends.cuda.enable_mem_efficient_sdp(False)
+    torch.backends.cuda.enable_flash_sdp(False)
 
     g = torch.Generator()
     g.manual_seed(seed)
