@@ -1,4 +1,4 @@
-"""Flickr8k dataset with lazy loading for images and text interface."""
+"""Flickr dataset with lazy loading for images and text interface."""
 
 from __future__ import annotations
 
@@ -16,44 +16,54 @@ if TYPE_CHECKING:
 
 class FlickrDataset(Dataset):
     """
-    Flickr8k dataset with lazy image loading and text processing interface.
+    Flickr dataset with lazy image loading and text processing interface.
 
-    This dataset loads the Flickr8k dataset which contains 8,000 images
-    with 5 captions each. Images are loaded lazily on-demand in __getitem__.
-
-    The dataset provides interfaces for text processing (tokenizer, vocab)
-    but leaves implementation to text modules.
+    Supports Flickr8k and Flickr30k (and similar datasets) via configurable
+    image directory name and CSV column names.
 
     Args:
-        root_dir: Root directory containing the Flickr8k dataset
+        root_dir: Root directory containing the dataset
         captions_file: Name of the captions file (default: "captions.txt")
+        image_dir_name: Subdirectory under root_dir containing images
+            (default: "Images" for Flickr8k; use "flickr30k_images" for Flickr30k)
+        image_col: CSV column name for image filenames. If None, auto-detected
+            from the header using the priority list: image_name, image, filename, file.
+        caption_col: CSV column name for captions. If None, auto-detected
+            from the header using the priority list: comment, caption, text, description.
         transform: Optional transform to apply to images
         tokenizer: Optional tokenizer for caption processing (interface only)
         max_samples: Optional limit on number of samples (for debugging)
 
-    Example:
-        >>> from torchvision import transforms
-        >>> transform = transforms.Compose([
-        ...     transforms.Resize((224, 224)),
-        ...     transforms.ToTensor(),
-        ... ])
+    Example — Flickr8k:
+        >>> dataset = FlickrDataset(root_dir="data/datasets/flickr8k")
+
+    Example — Flickr30k:
         >>> dataset = FlickrDataset(
-        ...     root_dir="data/datasets/flickr8k",
-        ...     transform=transform
+        ...     root_dir="data/datasets/flickr30k",
+        ...     captions_file="captions.txt",
+        ...     image_dir_name="flickr30k_images",
         ... )
     """
+
+    _IMAGE_COL_CANDIDATES: tuple[str, ...] = ("image_name", "image")
+    _CAPTION_COL_CANDIDATES: tuple[str, ...] = ("comment", "caption")
 
     def __init__(
         self,
         root_dir: str | Path,
         captions_file: str = "captions.txt",
+        image_dir_name: str = "Images",
+        image_col: Optional[str] = None,
+        caption_col: Optional[str] = None,
         transform: Optional[Callable] = None,
         tokenizer: Optional[Any] = None,
         max_samples: Optional[int] = None,
     ):
         """Initialize FlickrDataset."""
         self.root_dir = Path(root_dir)
-        self.image_dir = self.root_dir / "Images"
+        self.image_dir = self.root_dir / image_dir_name
+        self._image_col = image_col  # None = auto-detect from CSV header
+        self._caption_col = caption_col
         self.transform = transform
         self.tokenizer = tokenizer
 
@@ -76,19 +86,43 @@ class FlickrDataset(Dataset):
         self, captions_path: Path, max_samples: Optional[int] = None
     ) -> None:
         """
-        Load captions from CSV file.
+        Load captions from a CSV file.
 
-        The captions.txt file has format:
-        image,caption
-        1000268201_693b08cb0e.jpg,A child in a pink dress...
+        Supports comma-separated (Flickr8k default) and pipe-separated
+        (Flickr30k results.csv) files. The delimiter is auto-detected from
+        the header line. Column names are also auto-detected if not specified.
         """
         with open(captions_path, "r", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
+            header_line = f.readline()
+            delimiter = "|" if "|" in header_line else ","
+            fieldnames = [c.strip() for c in header_line.split(delimiter)]
+            reader = csv.DictReader(f, fieldnames=fieldnames, delimiter=delimiter)
+
+            image_col = self._image_col or next(
+                (c for c in self._IMAGE_COL_CANDIDATES if c in fieldnames), None
+            )
+            if image_col is None:
+                raise ValueError(
+                    f"Cannot auto-detect image column in {captions_path}. "
+                    f"Columns found: {fieldnames}. "
+                    f"Set image_col explicitly."
+                )
+
+            caption_col = self._caption_col or next(
+                (c for c in self._CAPTION_COL_CANDIDATES if c in fieldnames), None
+            )
+            if caption_col is None:
+                raise ValueError(
+                    f"Cannot auto-detect caption column in {captions_path}. "
+                    f"Columns found: {fieldnames}. "
+                    f"Set caption_col explicitly."
+                )
+
             for i, row in enumerate(reader):
                 if max_samples is not None and i >= max_samples:
                     break
-                image_filename = row["image"]
-                caption = row["caption"]
+                image_filename = row[image_col].strip()
+                caption = row[caption_col].strip()
                 self.samples.append((image_filename, caption))
 
     def __len__(self) -> int:
@@ -145,7 +179,7 @@ class FlickrDataset(Dataset):
         val_transform: Optional[Callable] = None,
         test_transform: Optional[Callable] = None,
         **kwargs: Any,
-    ) -> tuple["FlickrDataset", "FlickrDataset", "FlickrDataset"]:
+    ) -> tuple[FlickrDataset, FlickrDataset, FlickrDataset]:
         """
         Create train/val/test splits of the dataset.
 

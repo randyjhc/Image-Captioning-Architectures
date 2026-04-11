@@ -31,6 +31,7 @@ from utils import logger_setup
 # Metric implementations
 # ---------------------------------------------------------------------------
 
+
 def _get_ngrams(tokens: list[str], max_n: int) -> dict[tuple, int]:
     ngrams: dict[tuple, int] = collections.defaultdict(int)
     for n in range(1, max_n + 1):
@@ -155,7 +156,7 @@ def compute_cider(
     for refs, hyp in zip(references, hypotheses):
         hyp_ngrams = _get_ngrams(hyp, max_n)
         hyp_w = tfidf(hyp_ngrams)
-        hyp_norm = vec_norm(hyp_w)
+        vec_norm(hyp_w)
 
         score_per_order: list[float] = []
         for n in range(1, max_n + 1):
@@ -165,7 +166,9 @@ def compute_cider(
 
             ref_sum = 0.0
             for ref in refs:
-                ref_n = {k: v for k, v in tfidf(_get_ngrams(ref, n)).items() if len(k) == n}
+                ref_n = {
+                    k: v for k, v in tfidf(_get_ngrams(ref, n)).items() if len(k) == n
+                }
                 ref_n_norm = math.sqrt(sum(x * x for x in ref_n.values()))
                 if hyp_n_norm == 0 or ref_n_norm == 0:
                     continue
@@ -182,6 +185,7 @@ def compute_cider(
 # ---------------------------------------------------------------------------
 # Image-only dataset for batched inference on unique test images
 # ---------------------------------------------------------------------------
+
 
 class _UniqueImageDataset(Dataset):
     """Yields (image_tensor, image_filename) for a list of unique images."""
@@ -208,6 +212,7 @@ class _UniqueImageDataset(Dataset):
 # Model loading helpers
 # ---------------------------------------------------------------------------
 
+
 def _load_vit_generator(checkpoint_path: Path, data_root: Path, device: torch.device):
     from model_vit.generator import GeneratorViT
 
@@ -228,6 +233,7 @@ def _load_cnn_generator(checkpoint_path: Path, data_root: Path, device: torch.de
 # Evaluation loop
 # ---------------------------------------------------------------------------
 
+
 def evaluate(
     model_type: str,
     checkpoint_path: Path,
@@ -243,7 +249,7 @@ def evaluate(
     Args:
         model_type: "vit" or "cnn".
         checkpoint_path: Path to the model checkpoint.
-        data_root: Root of the Flickr8k dataset (contains captions.txt and Images/).
+        data_root: Root of the dataset to evaluate on.
         batch_size: Images per inference batch.
         max_len: Maximum generation length in tokens.
         num_workers: DataLoader workers.
@@ -325,6 +331,7 @@ def evaluate(
 # ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
+
 
 def _print_results(model_type: str, results: dict[str, float]) -> None:
     header = f"  {model_type.upper()} Evaluation Results  "

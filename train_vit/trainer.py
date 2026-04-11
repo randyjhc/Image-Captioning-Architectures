@@ -79,6 +79,8 @@ class TrainerViT:
             val_transform=get_val_transforms(config.image_size),
             test_transform=get_val_transforms(config.image_size),
             max_samples=config.max_samples,
+            image_col=config.image_col,
+            caption_col=config.caption_col,
         )
         self._val_ds = self._val_loader.dataset
         self._model = self._build_model().to(self._device)

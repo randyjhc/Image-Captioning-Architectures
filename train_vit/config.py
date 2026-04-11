@@ -34,6 +34,8 @@ class ConfigViT:
 
     # ---- Data ----
     image_size: int = 224
+    image_col: str | None = None  # None = auto-detect from CSV header
+    caption_col: str | None = None  # None = auto-detect from CSV header
     min_vocab_freq: int = 1
     max_seq_len: int = 34  # CaptionTokenizer fixed output length (covers most Flickr8k)
     max_samples: int | None = None  # None = full dataset; set e.g. 500 for fast runs
