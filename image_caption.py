@@ -91,11 +91,55 @@ def run_gen_vit(cfg_dict: dict[str, Any]) -> None:
 
 
 def run_train_cnn(cfg_dict: dict[str, Any]) -> None:
-    raise NotImplementedError("CNN architecture is not yet implemented.")
+    from train_cnn.config import ConfigCNN
+    from train_cnn.trainer import TrainerCNN
+
+    config = ConfigCNN.from_dict(cfg_dict)
+    logger_setup(log_file=config.log_file)
+    trainer = TrainerCNN(config, config.data_root, checkpoint_dir=config.checkpoint_dir)
+    trainer.fit()
 
 
 def run_gen_cnn(cfg_dict: dict[str, Any]) -> None:
-    raise NotImplementedError("CNN architecture is not yet implemented.")
+    import torch
+    from PIL import Image
+
+    from data.image.transforms import get_val_transforms
+    from train_cnn.config import ConfigCNN
+    from train_cnn.trainer import TrainerCNN
+
+    config = ConfigCNN.from_dict(cfg_dict)
+    checkpoint_path = cfg_dict.get(
+        "checkpoint_path", Path(config.checkpoint_dir) / "best.pt"
+    )
+    image_paths = cfg_dict.get("image_paths", config.image_paths)
+    max_len: int = cfg_dict.get("max_len", 30)
+
+    if not image_paths:
+        raise ValueError("'image_paths' must be a non-empty list.")
+
+    logger_setup(log_file=config.log_file)
+    trainer = TrainerCNN(config, config.data_root, checkpoint_dir=config.checkpoint_dir)
+    trainer.load_checkpoint(checkpoint_path)
+
+    device = next(trainer.model.parameters()).device
+    transform = get_val_transforms(config.image_size)
+    images = torch.stack(
+        [transform(Image.open(p).convert("RGB")) for p in image_paths]
+    ).to(device)
+
+    generated_ids = trainer.model.generate(
+        images,
+        sos_token_id=trainer.tokenizer.vocab.sos_idx,
+        eos_token_id=trainer.tokenizer.vocab.eos_idx,
+        max_len=max_len,
+    )
+    captions = [
+        trainer.tokenizer.vocab.decode(row.tolist(), skip_special=True)
+        for row in generated_ids
+    ]
+    for path, caption in zip(image_paths, captions):
+        print(f"{Path(path).name}: {caption}")
 
 
 # ---------------------------------------------------------------------------
