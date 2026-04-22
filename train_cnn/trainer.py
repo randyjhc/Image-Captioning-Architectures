@@ -201,6 +201,9 @@ class TrainerCNN:
             val_transform=get_val_transforms(self.config.image_size),
             test_transform=get_val_transforms(self.config.image_size),
             max_samples=self.config.max_samples,
+            image_dir_name=self.config.image_dir_name,  # [ADDED] supports Flickr30k image directory
+            image_col=self.config.image_col,            # [ADDED] supports Flickr30k column names
+            caption_col=self.config.caption_col,        # [ADDED] supports Flickr30k column names
         )
 
     def _build_model(self) -> ImageCaptioningModel:

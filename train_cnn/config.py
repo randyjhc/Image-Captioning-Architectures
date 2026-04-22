@@ -22,6 +22,9 @@ class ConfigCNN:
 
     # ---- Data ----
     image_size: int = 224
+    image_dir_name: str = "Images"   # [ADDED] image subdir; "Images" works for both Flickr8k and Flickr30k (if downloaded via script); set "flickr30k_images" for manual download
+    image_col: str | None = None     # [ADDED] None = auto-detect from CSV header
+    caption_col: str | None = None   # [ADDED] None = auto-detect from CSV header
     min_vocab_freq: int = 1
     max_seq_len: int = 34
     max_samples: int | None = None
